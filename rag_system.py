@@ -23,21 +23,22 @@ import numpy as np
 # FAISS for GPU-accelerated indexing
 try:
     import faiss
-except ImportError as exc:
-    raise ImportError(
-        "FAISS not installed. Please install with: pip install faiss-gpu-cu12"
-    ) from exc
+    FAISS_AVAILABLE = True
+except ImportError:
+    logging.getLogger(__name__).warning("FAISS not installed. RAG indexing will be disabled.")
+    FAISS_AVAILABLE = False
 
 
+# Optional dependencies (transformers, torch, document readers)
 # Optional dependencies (transformers, torch, document readers)
 try:
     from transformers import AutoTokenizer, AutoModel, pipeline
     import torch
-except ImportError as exc:
-    raise ImportError(
-        "Critical dependencies missing: transformers and torch. "
-        "Install with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 && pip install transformers pypdf docx openpyxl"
-    ) from exc
+    TORCH_AVAILABLE = True
+except ImportError:
+    logging.getLogger(__name__).warning("Transformers/Torch not installed. Embedding/LLM features disabled.")
+    TORCH_AVAILABLE = False
+    tokenizer, model, pipe = None, None, None
 
 from pypdf import PdfReader
 from docx import Document
@@ -211,6 +212,10 @@ def create_vector_db() -> bool:
         os.makedirs(RAG_FOLDER, exist_ok=True)
         logger.info("Created RAG folder: %s", RAG_FOLDER)
 
+    if not FAISS_AVAILABLE:
+        logger.error("FAISS is missing. Cannot create vector DB.")
+        return False
+        
     logger.info("Building/updating vector database with FAISS")
     EMBEDDING_MODEL, EMBEDDING_TOKENIZER, WHISPER_PIPELINE, DEVICE = initialize_models()
     if EMBEDDING_MODEL is None:
@@ -266,9 +271,14 @@ def create_vector_db() -> bool:
     logger.info("Creating FAISS index...")
     index = faiss.IndexFlatL2(EMBEDDING_DIM)
     if DEVICE == "cuda":
-        logger.info("Moving FAISS index to GPU...")
-        res = faiss.StandardGpuResources()
-        index = faiss.index_cpu_to_gpu(res, 0, index)
+        try:
+            logger.info("Moving FAISS index to GPU...")
+            res = faiss.StandardGpuResources()
+            index = faiss.index_cpu_to_gpu(res, 0, index)
+        except AttributeError:
+            logger.warning("FAISS GPU support not available (installed faiss-cpu?). Using CPU index.")
+        except Exception as exc:
+            logger.error("Failed to move FAISS to GPU: %s. Using CPU index.", exc)
     
     index.add(np.array(embeddings).astype('float32'))
     
@@ -289,7 +299,7 @@ def create_vector_db() -> bool:
 # ---------------------------------------------------------------------------
 # Retrieval
 # ---------------------------------------------------------------------------
-def retrieve_context(index: faiss.Index, metadata: List[Dict[str, Any]], query_text: str, k: int = 5) -> str:
+def retrieve_context(index: Any, metadata: List[Dict[str, Any]], query_text: str, k: int = 5) -> str:
     """Return the most relevant document snippets for *query_text* using FAISS."""
     query_emb = calculate_embedding(query_text)
     if query_emb is None:
@@ -336,15 +346,24 @@ def get_context(query: str) -> str:
 
     if not os.path.isfile(RAG_FAISS_INDEX) or not os.path.isfile(RAG_METADATA_FILE):
         logger.info("FAISS index or metadata not found – building now")
+        if not FAISS_AVAILABLE:
+             return "RAG indisponível (FAISS ausente)."
         if not create_vector_db():
             return "Erro: Não foi possível criar o banco de dados de vetores."
     
     try:
+        if not FAISS_AVAILABLE:
+             return "RAG indisponível (FAISS ausente)."
         logger.info("Loading FAISS index and metadata...")
         index = faiss.read_index(RAG_FAISS_INDEX)
         if DEVICE == "cuda":
-             res = faiss.StandardGpuResources()
-             index = faiss.index_cpu_to_gpu(res, 0, index)
+             try:
+                 res = faiss.StandardGpuResources()
+                 index = faiss.index_cpu_to_gpu(res, 0, index)
+             except AttributeError:
+                 logger.warning("FAISS GPU support missing. keeping index on CPU.")
+             except Exception as exc:
+                 logger.warning("Could not move loaded index to GPU: %s", exc)
 
         with open(RAG_METADATA_FILE, "r", encoding="utf-8") as f:
             metadata = json.load(f)

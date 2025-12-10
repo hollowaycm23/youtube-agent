@@ -23,6 +23,7 @@ pypdf
 python-docx
 openpyxl
 sentence-transformers
+faiss-gpu-cu12
 EOF
 
 echo "--- [3/7] Installing Dependencies (System-wide) ---"
