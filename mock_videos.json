@@ -1,0 +1,20 @@
+[
+    {
+        "id": {
+            "videoId": "vid_123"
+        },
+        "snippet": {
+            "title": "Como criar um Agente de IA com Python",
+            "description": "Neste tutorial passo a passo, vamos aprender a construir um agente autônomo usando a biblioteca Transformers e OpenVINO. #ia #python"
+        }
+    },
+    {
+        "id": {
+            "videoId": "vid_456"
+        },
+        "snippet": {
+            "title": "Gameplay de Minecraft: Sobrevivendo à primeira noite",
+            "description": "Dicas essenciais para iniciantes no Minecraft. Vamos coletar madeira, criar ferramentas e fugir dos creepers! #gameplay #minecraft"
+        }
+    }
+]
